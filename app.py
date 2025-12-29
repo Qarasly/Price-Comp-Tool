@@ -15,12 +15,18 @@ SELECTED_COLS = [
     "Adjustment needed", "Comp Bb Seller Name", "noon link"
 ]
 
-uploaded_file = st.file_uploader("Upload Master Excel File", type=["xlsx"])
+# Updated to accept both types
+uploaded_file = st.file_uploader("Upload Master File (Excel or CSV)", type=["xlsx", "csv"])
 
 if uploaded_file:
     if st.button("🚀 Process & Generate ZIP"):
         with st.spinner('Processing...'):
-            df = pd.read_excel(uploaded_file, engine='openpyxl')
+            # Detect file type and read accordingly
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+            else:
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+                
             df.columns = [c.strip() for c in df.columns]
             
             mask = df["Price Comp Bucket"].str.upper().isin({"NC", "NCO"})
@@ -44,23 +50,20 @@ if uploaded_file:
                 if out_dir.exists(): shutil.rmtree(out_dir)
                 out_dir.mkdir()
 
-                # --- 3. CREATE MASTER SUMMARY FILE ---
+                # 3. Create Master Summary
                 summary_df = (
                     filtered.groupby(["ID Partner", "Partner Name"])["SKU"]
                     .nunique()
                     .reset_index(name="NC_NCO_SKU_Count")
                     .sort_values(by="NC_NCO_SKU_Count", ascending=False)
                 )
-                summary_path = out_dir / "Partner_PriceComp_Counts.xlsx"
-                summary_df.to_excel(summary_path, index=False)
+                summary_df.to_excel(out_dir / "Partner_PriceComp_Counts.xlsx", index=False)
 
-                # --- 4. DISPLAY TOP 10 CHART ---
+                # 4. Display Top 10 Chart
                 st.subheader("🔝 Top 10 Sellers by NC/NCO Count")
-                top_10 = summary_df.head(10)
-                # Displaying the bar chart
-                st.bar_chart(data=top_10, x="Partner Name", y="NC_NCO_SKU_Count")
+                st.bar_chart(data=summary_df.head(10), x="Partner Name", y="NC_NCO_SKU_Count")
 
-                # --- 5. PARTNER EXPORT LOOP ---
+                # 5. Partner Export Loop
                 grouped = filtered.groupby("ID Partner", sort=False)
                 for pid, grp in grouped:
                     p_name = grp["Partner Name"].iloc[0] if "Partner Name" in grp else f"Partner_{pid}"
@@ -82,9 +85,8 @@ if uploaded_file:
                 shutil.make_archive(folder_name, 'zip', out_dir)
                 
                 with open(f"{folder_name}.zip", "rb") as f:
-                    st.success("✅ Done! Files processed and chart generated.")
+                    st.success(f"✅ Success! Generated files for {len(grouped)} partners.")
                     st.download_button(label="⬇️ Download ZIP", data=f, file_name=f"{folder_name}.zip", mime="application/zip")
                 
-                # Cleanup
                 shutil.rmtree(out_dir)
                 os.remove(f"{folder_name}.zip")
